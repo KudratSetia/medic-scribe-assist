@@ -30,6 +30,7 @@ interface TCCCCardFormProps {
 const TCCCCardForm = ({ soldier, onBack }: TCCCCardFormProps) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState("");
+  const [openAIKey, setOpenAIKey] = useState<string>("");
   const [formData, setFormData] = useState({
     // Basic info from soldier
     name: soldier.name,
@@ -90,8 +91,17 @@ const TCCCCardForm = ({ soldier, onBack }: TCCCCardFormProps) => {
     setFormData(prev => ({ ...prev, evacuationStatus: status }));
   };
 
+  const handleOpenAIKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setOpenAIKey(e.target.value);
+  };
+
   const startRecording = async () => {
     try {
+      if (!openAIKey) {
+        toast.error("Please enter your OpenAI API key first");
+        return;
+      }
+
       setRecordingStatus("Requesting microphone access...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
@@ -130,33 +140,74 @@ const TCCCCardForm = ({ soldier, onBack }: TCCCCardFormProps) => {
   
   const processAudio = async () => {
     try {
-      setRecordingStatus("Transcribing and processing...");
+      setRecordingStatus("Transcribing with OpenAI Whisper...");
       
       // Create audio blob from chunks
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
       
-      // For demonstration, we'll use a simulated response
-      // In a real implementation, you would send the audioBlob to OpenAI's Whisper API
+      // Create a form to send to the OpenAI API
+      const formData = new FormData();
+      formData.append("file", audioBlob, "recording.webm");
+      formData.append("model", "whisper-1");
       
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Call the OpenAI Whisper API
+      const whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${openAIKey}`
+        },
+        body: formData
+      });
       
-      // Simulate a transcript from Whisper
-      const simulatedTranscript = "Patient has a pulse of 88 bpm radial, blood pressure 124/82, respiratory rate of 18, pulse ox 97%, pain scale 6 out of 10. Patient has shrapnel wounds to the right arm and injuries to the left lower extremity. Applied tourniquet to left thigh at 14:30. Administered 10mg morphine IV at 14:32.";
+      if (!whisperResponse.ok) {
+        throw new Error(`Whisper API error: ${whisperResponse.status}`);
+      }
       
-      // In a real implementation, you would send the transcript to OpenAI's GPT API
-      // But for now, we'll simulate the response
+      const whisperData = await whisperResponse.json() as OpenAIWhisperResponse;
+      const transcript = whisperData.text;
       
-      // Simulate GPT parsing the transcript into structured data
-      const parsedResult: TranscriptionResult = {
-        pulse: "88 bpm, radial",
-        bloodPressure: "124/82",
-        respiratoryRate: "18",
-        pulseOx: "97%",
-        painScale: "6",
-        injuryLocations: "Left lower extremity, shrapnel wounds to right arm",
-        treatments: "Applied tourniquet to left thigh at 14:30. Administered 10mg morphine IV at 14:32."
+      setRecordingStatus("Processing transcript with GPT...");
+      
+      // Prepare the GPT prompt
+      const gptPrompt = {
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: "You are a medical assistant helping to extract information from a spoken report about a patient. Extract the following details if present: name, rosterNumber (battle roster number), serviceBranch, unit, gender, dateTime, allergies, injury (mechanism of injury), injuryLocations, pulse, bloodPressure, respiratoryRate, pulseOx, painScale, treatments. Format your response as a valid JSON object with these keys."
+          },
+          {
+            role: "user",
+            content: transcript
+          }
+        ]
       };
+      
+      // Call the OpenAI GPT API
+      const gptResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${openAIKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(gptPrompt)
+      });
+      
+      if (!gptResponse.ok) {
+        throw new Error(`GPT API error: ${gptResponse.status}`);
+      }
+      
+      const gptData = await gptResponse.json() as OpenAIGPTResponse;
+      const content = gptData.choices[0].message.content;
+      
+      // Parse the GPT response
+      let parsedResult: TranscriptionResult;
+      try {
+        parsedResult = JSON.parse(content);
+      } catch (error) {
+        console.error("Error parsing GPT response:", error);
+        throw new Error("Failed to parse structured data from GPT response");
+      }
       
       // Update the form with the parsed information
       updateFormWithTranscription(parsedResult);
@@ -170,10 +221,10 @@ const TCCCCardForm = ({ soldier, onBack }: TCCCCardFormProps) => {
       
     } catch (error) {
       console.error("Error processing audio:", error);
-      setRecordingStatus("Error processing audio. Please try again.");
+      setRecordingStatus(`Error processing audio: ${error instanceof Error ? error.message : "Unknown error"}`);
       setTimeout(() => {
         setRecordingStatus("");
-      }, 3000);
+      }, 5000);
     }
   };
   
@@ -189,6 +240,21 @@ const TCCCCardForm = ({ soldier, onBack }: TCCCCardFormProps) => {
       if (result.painScale) newData.painScale = result.painScale;
       if (result.injuryLocations) newData.injuryLocations = result.injuryLocations;
       if (result.treatments) newData.treatmentsAdministered = result.treatments;
+      
+      // If there are injury mechanisms listed, try to map them to our checkbox list
+      if (result.injury && result.injury.length > 0) {
+        const injuryMechanisms = result.injury;
+        const validMechanisms = ["Artillery", "Blunt", "Burn", "Fall", "Grenade", "GSW", "IED", "Landmine", "MVC", "RPG", "Other"];
+        
+        // Add any recognized injury mechanisms
+        const recognizedMechanisms = injuryMechanisms.filter(mechanism => 
+          validMechanisms.some(valid => mechanism.toLowerCase().includes(valid.toLowerCase()))
+        );
+        
+        if (recognizedMechanisms.length > 0) {
+          newData.mechanismOfInjury = [...new Set([...newData.mechanismOfInjury, ...recognizedMechanisms])];
+        }
+      }
       
       return newData;
     });
@@ -254,6 +320,34 @@ const TCCCCardForm = ({ soldier, onBack }: TCCCCardFormProps) => {
               Stop Recording
             </Button>
           </div>
+        </div>
+        
+        {/* OpenAI API Key Input */}
+        <div className="mb-4 p-4 border border-gray-300 rounded">
+          <div className="flex flex-col md:flex-row gap-4 items-end">
+            <div className="flex-1">
+              <Label htmlFor="openAIKey" className="mb-2 block text-sm font-medium">OpenAI API Key (required for voice processing)</Label>
+              <Input 
+                id="openAIKey"
+                type="password"
+                value={openAIKey}
+                onChange={handleOpenAIKeyChange}
+                placeholder="sk-..."
+                className="border-gray-300"
+              />
+            </div>
+            <div>
+              <a 
+                href="https://platform.openai.com/account/api-keys" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-blue-600 text-sm hover:underline"
+              >
+                Get your API key
+              </a>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-gray-500">Your API key is only used for API calls and is not stored.</p>
         </div>
         
         {recordingStatus && (
