@@ -94,7 +94,7 @@ export const useAudioRecording = ({ openAIKey, onTranscriptionComplete }: UseAud
         messages: [
           {
             role: "system",
-            content: "You are a medical assistant helping to extract information from a spoken report about a patient. Extract the following details if present: name, rosterNumber (battle roster number), serviceBranch, unit, gender, dateTime, allergies, injury (mechanism of injury), injuryLocations, pulse, bloodPressure, respiratoryRate, pulseOx, painScale, treatments. Format your response as a valid JSON object with these keys."
+            content: "You are a medical assistant helping to extract information from a spoken report about a patient. Extract the following details if present: name, rosterNumber (battle roster number), serviceBranch, unit, gender, dateTime, allergies, injury (mechanism of injury), injuryLocations, pulse, bloodPressure, respiratoryRate, pulseOx, painScale, treatments. Format your response as a valid JSON object with these keys. Do not include markdown formatting or code blocks."
           },
           {
             role: "user",
@@ -118,14 +118,19 @@ export const useAudioRecording = ({ openAIKey, onTranscriptionComplete }: UseAud
       }
       
       const gptData = await gptResponse.json() as OpenAIGPTResponse;
-      const content = gptData.choices[0].message.content;
+      let content = gptData.choices[0].message.content;
+      
+      // Clean up the response - remove markdown code block indicators if present
+      content = content.replace(/```json\s*/g, '').replace(/```\s*$/g, '');
       
       // Parse the GPT response
       let parsedResult: TranscriptionResult;
       try {
         parsedResult = JSON.parse(content);
+        console.log("Successfully parsed result:", parsedResult);
       } catch (error) {
         console.error("Error parsing GPT response:", error);
+        console.error("Raw content:", content);
         throw new Error("Failed to parse structured data from GPT response");
       }
       
