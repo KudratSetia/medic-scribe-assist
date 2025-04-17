@@ -46,3 +46,15 @@ export interface TranscriptionResult {
   firstResponderName?: string;
   notes?: string;
 }
+
+export interface OpenAIWhisperResponse {
+  text: string;
+}
+
+export interface OpenAIGPTResponse {
+  choices: {
+    message: {
+      content: string;
+    };
+  }[];
+}

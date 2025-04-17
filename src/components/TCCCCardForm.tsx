@@ -14,7 +14,12 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { toast } from "@/components/ui/sonner";
-import { Soldier, TranscriptionResult } from "@/types/tccc";
+import { 
+  Soldier, 
+  TranscriptionResult, 
+  OpenAIWhisperResponse, 
+  OpenAIGPTResponse 
+} from "@/types/tccc";
 import { ArrowLeft, Mic, MicOff } from "lucide-react";
 
 interface TCCCCardFormProps {
@@ -123,14 +128,27 @@ const TCCCCardForm = ({ soldier, onBack }: TCCCCardFormProps) => {
     }
   };
   
-  const processAudio = () => {
-    // Simulate API call to OpenAI Whisper and GPT
-    setRecordingStatus("Transcribing and processing...");
-    
-    // Simulate delay for API processing
-    setTimeout(() => {
-      // Mock response from GPT that would parse the transcript
-      const mockResult: TranscriptionResult = {
+  const processAudio = async () => {
+    try {
+      setRecordingStatus("Transcribing and processing...");
+      
+      // Create audio blob from chunks
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      
+      // For demonstration, we'll use a simulated response
+      // In a real implementation, you would send the audioBlob to OpenAI's Whisper API
+      
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Simulate a transcript from Whisper
+      const simulatedTranscript = "Patient has a pulse of 88 bpm radial, blood pressure 124/82, respiratory rate of 18, pulse ox 97%, pain scale 6 out of 10. Patient has shrapnel wounds to the right arm and injuries to the left lower extremity. Applied tourniquet to left thigh at 14:30. Administered 10mg morphine IV at 14:32.";
+      
+      // In a real implementation, you would send the transcript to OpenAI's GPT API
+      // But for now, we'll simulate the response
+      
+      // Simulate GPT parsing the transcript into structured data
+      const parsedResult: TranscriptionResult = {
         pulse: "88 bpm, radial",
         bloodPressure: "124/82",
         respiratoryRate: "18",
@@ -140,14 +158,23 @@ const TCCCCardForm = ({ soldier, onBack }: TCCCCardFormProps) => {
         treatments: "Applied tourniquet to left thigh at 14:30. Administered 10mg morphine IV at 14:32."
       };
       
-      updateFormWithTranscription(mockResult);
+      // Update the form with the parsed information
+      updateFormWithTranscription(parsedResult);
+      
       setRecordingStatus("Transcription complete. Fields updated.");
       
       // Clear status after a few seconds
       setTimeout(() => {
         setRecordingStatus("");
       }, 3000);
-    }, 2000);
+      
+    } catch (error) {
+      console.error("Error processing audio:", error);
+      setRecordingStatus("Error processing audio. Please try again.");
+      setTimeout(() => {
+        setRecordingStatus("");
+      }, 3000);
+    }
   };
   
   const updateFormWithTranscription = (result: TranscriptionResult) => {
