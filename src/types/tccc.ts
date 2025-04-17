@@ -12,6 +12,7 @@ export interface Soldier {
 
 export interface TCCCCard {
   soldierId: string;
+  evacuationStatus?: "Urgent" | "Priority" | "Routine" | "";
   mechanismOfInjury: string[];
   injuryLocations: string;
   vitalSigns: {
@@ -22,6 +23,8 @@ export interface TCCCCard {
     painScale: string;
   };
   treatmentsAdministered: string;
+  firstResponderName?: string;
+  notes?: string;
 }
 
 export interface TranscriptionResult {
@@ -40,4 +43,6 @@ export interface TranscriptionResult {
   pulseOx?: string;
   painScale?: string;
   treatments?: string;
+  firstResponderName?: string;
+  notes?: string;
 }
