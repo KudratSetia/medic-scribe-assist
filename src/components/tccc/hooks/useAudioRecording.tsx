@@ -22,6 +22,12 @@ export const useAudioRecording = ({ openAIKey, onTranscriptionComplete }: UseAud
         return;
       }
 
+      // Validate OpenAI API key format (simple check)
+      if (!openAIKey.startsWith('sk-')) {
+        toast.error("Invalid OpenAI API key format. Keys typically start with 'sk-'");
+        return;
+      }
+
       setRecordingStatus("Requesting microphone access...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
@@ -47,6 +53,7 @@ export const useAudioRecording = ({ openAIKey, onTranscriptionComplete }: UseAud
       console.error("Error accessing microphone:", error);
       setRecordingStatus("Microphone access denied. Please check your browser permissions.");
       setIsRecording(false);
+      toast.error("Could not access microphone. Check browser permissions.");
     }
   };
   
@@ -60,6 +67,12 @@ export const useAudioRecording = ({ openAIKey, onTranscriptionComplete }: UseAud
   
   const processAudio = async () => {
     try {
+      if (audioChunksRef.current.length === 0) {
+        setRecordingStatus("No audio data recorded. Please try again.");
+        toast.error("No audio recorded. Please try again.");
+        return;
+      }
+
       setRecordingStatus("Transcribing with OpenAI Whisper...");
       
       // Create audio blob from chunks
@@ -70,7 +83,7 @@ export const useAudioRecording = ({ openAIKey, onTranscriptionComplete }: UseAud
       formData.append("file", audioBlob, "recording.webm");
       formData.append("model", "whisper-1");
       
-      // Call the OpenAI Whisper API
+      // Call the OpenAI Whisper API with proper error handling
       const whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
         headers: {
@@ -80,17 +93,25 @@ export const useAudioRecording = ({ openAIKey, onTranscriptionComplete }: UseAud
       });
       
       if (!whisperResponse.ok) {
-        throw new Error(`Whisper API error: ${whisperResponse.status}`);
+        const errorText = await whisperResponse.text();
+        console.error("OpenAI Whisper API error:", whisperResponse.status, errorText);
+        throw new Error(`OpenAI API error (${whisperResponse.status}): ${errorText || 'Could not transcribe audio'}`);
       }
       
       const whisperData = await whisperResponse.json() as OpenAIWhisperResponse;
       const transcript = whisperData.text;
       
+      if (!transcript || transcript.trim() === "") {
+        setRecordingStatus("No speech detected in recording. Please try again.");
+        toast.error("No speech detected. Please try again.");
+        return;
+      }
+      
       setRecordingStatus("Processing transcript with GPT...");
       
       // Prepare the GPT prompt
       const gptPrompt = {
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: [
           {
             role: "system",
@@ -114,7 +135,9 @@ export const useAudioRecording = ({ openAIKey, onTranscriptionComplete }: UseAud
       });
       
       if (!gptResponse.ok) {
-        throw new Error(`GPT API error: ${gptResponse.status}`);
+        const errorText = await gptResponse.text();
+        console.error("OpenAI GPT API error:", gptResponse.status, errorText);
+        throw new Error(`OpenAI API error (${gptResponse.status}): ${errorText || 'Could not process transcript'}`);
       }
       
       const gptData = await gptResponse.json() as OpenAIGPTResponse;
@@ -131,6 +154,7 @@ export const useAudioRecording = ({ openAIKey, onTranscriptionComplete }: UseAud
       } catch (error) {
         console.error("Error parsing GPT response:", error);
         console.error("Raw content:", content);
+        toast.error("Could not parse AI response. Please try again.");
         throw new Error("Failed to parse structured data from GPT response");
       }
       
@@ -138,6 +162,7 @@ export const useAudioRecording = ({ openAIKey, onTranscriptionComplete }: UseAud
       onTranscriptionComplete(parsedResult);
       
       setRecordingStatus("Transcription complete. Fields updated.");
+      toast.success("Transcription completed successfully!");
       
       // Clear status after a few seconds
       setTimeout(() => {
@@ -147,6 +172,7 @@ export const useAudioRecording = ({ openAIKey, onTranscriptionComplete }: UseAud
     } catch (error) {
       console.error("Error processing audio:", error);
       setRecordingStatus(`Error processing audio: ${error instanceof Error ? error.message : "Unknown error"}`);
+      toast.error(`Error: ${error instanceof Error ? error.message : "Failed to process audio"}`);
       setTimeout(() => {
         setRecordingStatus("");
       }, 5000);
