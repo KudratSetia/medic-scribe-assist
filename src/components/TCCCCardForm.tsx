@@ -97,13 +97,15 @@ const TCCCCardForm = ({ soldier, onBack }: TCCCCardFormProps) => {
       if (result.treatments) newData.treatmentsAdministered = result.treatments;
       
       // If there are injury mechanisms listed, try to map them to our checkbox list
-      if (result.injury && result.injury.length > 0) {
+      if (result.injury && Array.isArray(result.injury) && result.injury.length > 0) {
         const injuryMechanisms = result.injury;
         const validMechanisms = ["Artillery", "Blunt", "Burn", "Fall", "Grenade", "GSW", "IED", "Landmine", "MVC", "RPG", "Other"];
         
         // Add any recognized injury mechanisms
         const recognizedMechanisms = injuryMechanisms.filter(mechanism => 
-          validMechanisms.some(valid => mechanism.toLowerCase().includes(valid.toLowerCase()))
+          validMechanisms.some(valid => 
+            mechanism && typeof mechanism === 'string' && mechanism.toLowerCase().includes(valid.toLowerCase())
+          )
         );
         
         if (recognizedMechanisms.length > 0) {
